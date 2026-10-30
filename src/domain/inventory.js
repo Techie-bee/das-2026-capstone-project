@@ -1,7 +1,13 @@
 
-import { DomainError } from "./errors.js";
-import { newId, newReference } from "./ids.js";
-import { Queue } from "./waitlistQueue.js";
+import { newId, referenceCode } from './ids.js';
+import { Queue } from './waitlistQueue.js';
+import { DomainError } from './errors.js';
+import { summarizeEvent } from './eventSearch.js';
+
+export const MAX_TICKETS_PER_BOOKING = 10;
+
+// Bookings in these states are holding seats. A cancelled one is not.
+const HOLDS_SEATS = new Set(['pending', 'paid']);
 
 export function createStore() {
   return {
@@ -21,8 +27,16 @@ export function createEvent(store, { name, date }) {
     throw new DomainError("Event name is required", "VALIDATION");
   }
 
-  if (typeof date !== "string" || date.trim() === "") {
-    throw new DomainError("Event date is required", "VALIDATION");
+function getEvent(store, eventId) {
+  const event = store.events.get(eventId);
+  if (!event) throw new DomainError('NOT_FOUND', 'Event not found');
+  return event;
+}
+
+export function createEvent(store, { title, city, venue = '', startsAt, organizerId }) {
+  const date = new Date(startsAt);
+  if (Number.isNaN(date.getTime())) {
+    throw new DomainError('VALIDATION', 'startsAt must be a valid date');
   }
 
   const event = {
@@ -37,35 +51,8 @@ export function createEvent(store, { name, date }) {
   return event;
 }
 
-
-export function addTier(store, eventId, { name, capacity, priceCents }) {
-  if (!store || !(store.events instanceof Map)) {
-    throw new DomainError("Invalid store", "VALIDATION");
-  }
-
-  const event = store.events.get(eventId);
-
-  if (!event) {
-    throw new DomainError("Event not found", "NOT_FOUND");
-  }
-
-  if (typeof name !== "string" || name.trim() === "") {
-    throw new DomainError("Tier name is required", "VALIDATION");
-  }
-
-  if (!Number.isSafeInteger(capacity) || capacity <= 0) {
-    throw new DomainError(
-      "Capacity must be a positive whole number",
-      "VALIDATION"
-    );
-  }
-
-  if (!Number.isSafeInteger(priceCents) || priceCents < 0) {
-    throw new DomainError(
-      "Price must be a non-negative whole number",
-      "VALIDATION"
-    );
-  }
+export function addTier(store, eventId, { name, priceCents, capacity }) {
+  const event = getEvent(store, eventId);
 
   const tier = {
     id: newId(),
@@ -81,10 +68,25 @@ export function addTier(store, eventId, { name, capacity, priceCents }) {
   return tier;
 }
 
-export function bookTickets(store, eventId, tierId, { name, quantity }) {
-  if (!store || !(store.events instanceof Map)) {
-    throw new DomainError("Invalid store", "VALIDATION");
+export function publishEvent(store, eventId) {
+  const event = getEvent(store, eventId);
+  if (event.tierIds.length === 0) {
+    throw new DomainError('INVALID_STATE', 'Add at least one ticket tier before publishing');
   }
+  event.status = 'published';
+  return event;
+}
+
+// What the public event list is built from. Drafts are hidden unless asked for.
+export function listEventSummaries(store, { publishedOnly = true } = {}) {
+  return [...store.events.values()]
+    .filter((event) => !publishedOnly || event.status === 'published')
+    .map((event) => summarizeEvent(event, event.tierIds.map((id) => store.tiers.get(id))));
+}
+
+export function seatsLeft(tier) {
+  return tier.capacity - tier.sold;
+}
 
   const event = store.events.get(eventId);
 

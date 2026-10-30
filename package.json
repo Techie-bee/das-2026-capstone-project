@@ -5,6 +5,8 @@
   "description": "Event ticketing and booking system",
   "type": "module",
   "scripts": {
+    "start": "node src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-reporter=spec",
     "demo": "node scripts/demo.js",
     "benchmark": "node scripts/benchmark-lookup.js"
   }
